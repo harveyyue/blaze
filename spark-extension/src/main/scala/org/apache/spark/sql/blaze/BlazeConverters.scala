@@ -128,7 +128,9 @@ object BlazeConverters extends Logging {
       var newExec = exec.withNewChildren(newChildren)
       exec.getTagValue(convertibleTag).foreach(newExec.setTagValue(convertibleTag, _))
       exec.getTagValue(convertStrategyTag).foreach(newExec.setTagValue(convertStrategyTag, _))
-      exec.getTagValue(childOrderingRequiredTag).foreach(newExec.setTagValue(childOrderingRequiredTag, _))
+      exec
+        .getTagValue(childOrderingRequiredTag)
+        .foreach(newExec.setTagValue(childOrderingRequiredTag, _))
       if (!isNeverConvert(newExec)) {
         newExec = convertSparkPlan(newExec)
       }
