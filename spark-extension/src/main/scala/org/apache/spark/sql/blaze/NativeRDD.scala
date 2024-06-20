@@ -47,6 +47,7 @@ class NativeRDD(
 
   override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
     val computingNativePlan = nativePlan(split, context)
+    logInfo(s"Start executing NativeRDD: $friendlyName")
     NativeHelper.executeNativePlan(computingNativePlan, metrics, split, Some(context))
   }
 }
