@@ -18,13 +18,12 @@ package org.apache.spark.sql.execution.blaze.plan
 import java.net.URI
 import java.security.PrivilegedExceptionAction
 import java.util.UUID
-
 import scala.collection.JavaConverters._
 import scala.collection.immutable.SortedMap
-
 import org.apache.hadoop.fs.FileSystem
 import org.apache.spark.Partition
 import org.apache.spark.TaskContext
+import org.apache.spark.broadcast.Broadcast
 import org.blaze.{protobuf => pb}
 import org.apache.spark.rdd.MapPartitionsRDD
 import org.apache.spark.sql.blaze.JniBridge
@@ -70,7 +69,7 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
   override val output: Seq[Attribute] = basedFileScan.output
   override val outputPartitioning: Partitioning = basedFileScan.outputPartitioning
 
-  private val inputFileScanRDD = {
+  protected val inputFileScanRDD = {
     basedFileScan.inputRDDs().head match {
       case rdd: FileScanRDD => rdd
       case rdd: MapPartitionsRDD[_, _] => rdd.prev.asInstanceOf[FileScanRDD]
@@ -85,10 +84,10 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
     .mapValues(_.map(_.length).sum)
     .map(identity) // make this map serializable
 
-  private def nativePruningPredicateFilters = basedFileScan.dataFilters
+  protected def nativePruningPredicateFilters = basedFileScan.dataFilters
     .map(expr => NativeConverters.convertScanPruningExpr(expr))
 
-  private def nativeFileSchema =
+  protected def nativeFileSchema =
     NativeConverters.convertSchema(StructType(basedFileScan.relation.dataSchema.map {
       case field if basedFileScan.requiredSchema.exists(_.name == field.name) =>
         field.copy(nullable = true)
@@ -97,10 +96,10 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
         StructField(field.name, NullType, nullable = true)
     }))
 
-  private def nativePartitionSchema =
+  protected def nativePartitionSchema =
     NativeConverters.convertSchema(partitionSchema)
 
-  private def nativeFileGroups = (partition: FilePartition) => {
+  protected def nativeFileGroups = (partition: FilePartition) => {
     // list input file statuses
     val nativePartitionedFile = (file: PartitionedFile) => {
       val nativePartitionValues = partitionSchema.zipWithIndex.map { case (field, index) =>
@@ -169,20 +168,7 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
       rddShuffleReadFull = true,
       (partition, _context) => {
         val resourceId = s"NativeParquetScanExec:${UUID.randomUUID().toString}"
-        val sharedConf = broadcastedHadoopConf.value.value
-        JniBridge.resourcesMap.put(
-          resourceId,
-          (location: String) => {
-            val getfsTimeMetric = metrics("io_time_getfs")
-            val currentTimeMillis = System.currentTimeMillis()
-            val fs = NativeHelper.currentUser.doAs(new PrivilegedExceptionAction[FileSystem] {
-              override def run(): FileSystem = {
-                FileSystem.get(new URI(location), sharedConf)
-              }
-            })
-            getfsTimeMetric.add((System.currentTimeMillis() - currentTimeMillis) * 1000000)
-            fs
-          })
+        putJniBridgeResource(resourceId, broadcastedHadoopConf)
 
         val nativeFileGroup = nativeFileGroups(partition.asInstanceOf[FilePartition])
         val nativeParquetScanConf = pb.FileScanExecConf
@@ -208,6 +194,25 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
           .build()
       },
       friendlyName = "NativeRDD.ParquetScan")
+  }
+
+  protected def putJniBridgeResource(
+      resourceId: String,
+      broadcastedHadoopConf: Broadcast[SerializableConfiguration]): Unit = {
+    val sharedConf = broadcastedHadoopConf.value.value
+    JniBridge.resourcesMap.put(
+      resourceId,
+      (location: String) => {
+        val getFsTimeMetric = metrics("io_time_getfs")
+        val currentTimeMillis = System.currentTimeMillis()
+        val fs = NativeHelper.currentUser.doAs(new PrivilegedExceptionAction[FileSystem] {
+          override def run(): FileSystem = {
+            FileSystem.get(new URI(location), sharedConf)
+          }
+        })
+        getFsTimeMetric.add((System.currentTimeMillis() - currentTimeMillis) * 1000000)
+        fs
+      })
   }
 
   override val nodeName: String =

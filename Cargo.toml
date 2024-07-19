@@ -62,6 +62,8 @@ parquet = { version = "50.0.0" }
 # serde_json: branch=v1.0.96-blaze
 serde_json = { version = "1.0.96" }
 
+orc-rust = { version = "0.3.1" }
+
 [patch.crates-io]
 # datafusion: branch=v36-blaze
 datafusion = { git = "https://github.com/blaze-init/arrow-datafusion.git", rev = "17b1ad3c7432391b94dd54e48a60db6d5712a7ef"}
@@ -70,6 +72,7 @@ datafusion-expr = { git = "https://github.com/blaze-init/arrow-datafusion.git", 
 datafusion-execution = { git = "https://github.com/blaze-init/arrow-datafusion.git", rev = "17b1ad3c7432391b94dd54e48a60db6d5712a7ef"}
 datafusion-optimizer = { git = "https://github.com/blaze-init/arrow-datafusion.git", rev = "17b1ad3c7432391b94dd54e48a60db6d5712a7ef"}
 datafusion-physical-expr = { git = "https://github.com/blaze-init/arrow-datafusion.git", rev = "17b1ad3c7432391b94dd54e48a60db6d5712a7ef"}
+orc-rust = { git = "https://github.com/harveyyue/datafusion-orc.git", rev = "517c30843a149b3ad281f6a4fb94d422b609c922"}
 
 # arrow: branch=v50-blaze
 arrow = { git = "https://github.com/blaze-init/arrow-rs.git", rev = "7471d70f7ae6edd5d4da82b7d966a8ede720e499"}

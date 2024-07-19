@@ -41,3 +41,5 @@ tempfile = "3"
 tokio = "1.38"
 uuid = "1.8.0"
 zstd = "0.13.1"
+orc-rust = { workspace = true }
+futures-util = "0.3.30"

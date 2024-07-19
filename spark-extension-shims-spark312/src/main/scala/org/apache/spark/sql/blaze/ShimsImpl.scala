@@ -17,7 +17,6 @@ package org.apache.spark.sql.blaze
 
 import java.io.File
 import java.util.UUID
-
 import org.apache.commons.lang3.reflect.FieldUtils
 import org.apache.spark.ShuffleDependency
 import org.apache.spark.SparkEnv
@@ -43,7 +42,7 @@ import org.apache.spark.sql.execution.adaptive.QueryStageExec
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.ShuffledRowRDD
-import org.apache.spark.sql.execution.blaze.plan.{BroadcastSide, BuildSide, ConvertToNativeBase, ConvertToNativeExec, NativeAggBase, NativeAggExec, NativeBroadcastExchangeBase, NativeBroadcastExchangeExec, NativeBroadcastJoinBase, NativeExpandBase, NativeExpandExec, NativeFilterBase, NativeFilterExec, NativeGenerateBase, NativeGenerateExec, NativeGlobalLimitBase, NativeGlobalLimitExec, NativeLocalLimitBase, NativeLocalLimitExec, NativeParquetInsertIntoHiveTableBase, NativeParquetInsertIntoHiveTableExec, NativeParquetScanBase, NativeParquetScanExec, NativeParquetSinkBase, NativeParquetSinkExec, NativePartialTakeOrderedBase, NativePartialTakeOrderedExec, NativeProjectBase, NativeProjectExec, NativeRenameColumnsBase, NativeRenameColumnsExec, NativeShuffleExchangeBase, NativeShuffleExchangeExec, NativeSortBase, NativeSortExec, NativeSortMergeJoinBase, NativeTakeOrderedBase, NativeTakeOrderedExec, NativeUnionBase, NativeUnionExec, NativeWindowBase, NativeWindowExec}
+import org.apache.spark.sql.execution.blaze.plan.{BroadcastSide, BuildSide, ConvertToNativeBase, ConvertToNativeExec, NativeAggBase, NativeAggExec, NativeBroadcastExchangeBase, NativeBroadcastExchangeExec, NativeBroadcastJoinBase, NativeExpandBase, NativeExpandExec, NativeFilterBase, NativeFilterExec, NativeGenerateBase, NativeGenerateExec, NativeGlobalLimitBase, NativeGlobalLimitExec, NativeLocalLimitBase, NativeLocalLimitExec, NativeOrcScanBase, NativeOrcScanExec, NativeParquetInsertIntoHiveTableBase, NativeParquetInsertIntoHiveTableExec, NativeParquetScanBase, NativeParquetScanExec, NativeParquetSinkBase, NativeParquetSinkExec, NativePartialTakeOrderedBase, NativePartialTakeOrderedExec, NativeProjectBase, NativeProjectExec, NativeRenameColumnsBase, NativeRenameColumnsExec, NativeShuffleExchangeBase, NativeShuffleExchangeExec, NativeSortBase, NativeSortExec, NativeSortMergeJoinBase, NativeTakeOrderedBase, NativeTakeOrderedExec, NativeUnionBase, NativeUnionExec, NativeWindowBase, NativeWindowExec}
 import org.apache.spark.sql.execution.CoalescedPartitionSpec
 import org.apache.spark.sql.execution.ShufflePartitionSpec
 import org.apache.spark.sql.execution.blaze.shuffle.BlazeBlockStoreShuffleReader
@@ -169,6 +168,9 @@ class ShimsImpl extends Shims with Logging {
   override def createNativeParquetScanExec(
       basedFileScan: FileSourceScanExec): NativeParquetScanBase =
     NativeParquetScanExec(basedFileScan)
+
+  override def createNativeOrcScanExec(basedFileScan: FileSourceScanExec): NativeOrcScanBase =
+    NativeOrcScanExec(basedFileScan)
 
   override def createNativeProjectExec(
       projectList: Seq[NamedExpression],
