@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FilePartition
 import org.blaze.{protobuf => pb}
 
-abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
+abstract class NativeOrcScanBase(basedFileScan: FileSourceScanExec)
     extends NativeFileSourceScanBase(basedFileScan) {
 
   override def doExecuteNative(): NativeRDD = {
@@ -59,11 +59,11 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
       Nil,
       rddShuffleReadFull = true,
       (partition, _context) => {
-        val resourceId = s"NativeParquetScanExec:${UUID.randomUUID().toString}"
+        val resourceId = s"NativeOrcScanExec:${UUID.randomUUID().toString}"
         putJniBridgeResource(resourceId, broadcastedHadoopConf)
 
         val nativeFileGroup = nativeFileGroups(partition.asInstanceOf[FilePartition])
-        val nativeParquetScanConf = pb.FileScanExecConf
+        val nativeFileScanExecConf = pb.FileScanExecConf
           .newBuilder()
           .setNumPartitions(numPartitions)
           .setPartitionIndex(partition.index)
@@ -74,17 +74,20 @@ abstract class NativeParquetScanBase(basedFileScan: FileSourceScanExec)
           .setPartitionSchema(nativePartitionSchema)
           .build()
 
-        val nativeParquetScanExecBuilder = pb.ParquetScanExecNode
+        val nativeOrcScanExecBuilder = pb.OrcScanExecNode
           .newBuilder()
-          .setBaseConf(nativeParquetScanConf)
+          .setBaseConf(nativeFileScanExecConf)
           .setFsResourceId(resourceId)
           .addAllPruningPredicates(nativePruningPredicateFilters.asJava)
 
         pb.PhysicalPlanNode
           .newBuilder()
-          .setParquetScan(nativeParquetScanExecBuilder.build())
+          .setOrcScan(nativeOrcScanExecBuilder.build())
           .build()
       },
-      friendlyName = "NativeRDD.ParquetScan")
+      friendlyName = "NativeRDD.OrcScan")
   }
+
+  override val nodeName: String =
+    s"NativeOrcScan ${basedFileScan.tableIdentifier.map(_.unquotedString).getOrElse("")}"
 }
