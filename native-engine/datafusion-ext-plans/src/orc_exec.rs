@@ -28,9 +28,10 @@ use datafusion::{
     execution::context::TaskContext,
     physical_plan::{
         expressions::PhysicalSortExpr,
-        metrics::{ExecutionPlanMetricsSet, MetricValue, MetricsSet, Time},
+        metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricValue, MetricsSet, Time},
+        stream::RecordBatchStreamAdapter,
         DisplayAs, DisplayFormatType, ExecutionPlan, Metric, Partitioning, PhysicalExpr,
-        SendableRecordBatchStream, Statistics,
+        RecordBatchStream, SendableRecordBatchStream, Statistics,
     },
 };
 use datafusion_ext_commons::{
@@ -38,11 +39,14 @@ use datafusion_ext_commons::{
     hadoop_fs::{FsDataInputStream, FsProvider},
 };
 use futures::{future::BoxFuture, FutureExt, StreamExt};
+use futures_util::{stream::once, TryStreamExt};
 use object_store::ObjectMeta;
 use once_cell::sync::OnceCell;
 use orc_rust::{
     arrow_reader::ArrowReaderBuilder, projection::ProjectionMask, reader::AsyncChunkReader,
 };
+
+use crate::common::output::TaskOutputter;
 
 /// Execution plan for scanning one or more Orc partitions
 #[derive(Debug, Clone)]
@@ -84,6 +88,7 @@ impl OrcExec {
 impl DisplayAs for OrcExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> fmt::Result {
         let limit = self.base_config.limit;
+        let projection = self.base_config.projection.clone();
         let file_group = self
             .base_config
             .file_groups
@@ -92,7 +97,11 @@ impl DisplayAs for OrcExec {
             .cloned()
             .collect::<Vec<_>>();
 
-        write!(f, "OrcExec: limit={:?}, file_group={:?}", limit, file_group,)
+        write!(
+            f,
+            "OrcExec: file_group={:?}, limit={:?}, projection={:?}",
+            file_group, limit, projection
+        )
     }
 }
 
@@ -129,8 +138,9 @@ impl ExecutionPlan for OrcExec {
     fn execute(
         &self,
         partition_index: usize,
-        _context: Arc<TaskContext>,
+        context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
+        let baseline_metrics = BaselineMetrics::new(&self.metrics, partition_index);
         let io_time = Time::default();
         let io_time_metric = Arc::new(Metric::new(
             MetricValue::Time {
@@ -160,8 +170,30 @@ impl ExecutionPlan for OrcExec {
             fs_provider,
         };
 
-        let stream = FileStream::new(&self.base_config, partition_index, opener, &self.metrics)?;
-        Ok(Box::pin(stream))
+        let baseline_metrics_cloned = baseline_metrics.clone();
+        let file_stream =
+            FileStream::new(&self.base_config, partition_index, opener, &self.metrics)?;
+        let mut stream = Box::pin(file_stream);
+        let context_cloned = context.clone();
+        let timed_stream = Box::pin(RecordBatchStreamAdapter::new(
+            self.schema(),
+            once(async move {
+                context_cloned.output_with_sender(
+                    "OrcScan",
+                    stream.schema(),
+                    move |sender| async move {
+                        let mut timer = baseline_metrics_cloned.elapsed_compute().timer();
+                        while let Some(batch) = stream.next().await.transpose()? {
+                            println!("orc batch {:?}", batch);
+                            sender.send(Ok(batch), Some(&mut timer)).await;
+                        }
+                        Ok(())
+                    },
+                )
+            })
+            .try_flatten(),
+        ));
+        Ok(timed_stream)
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
