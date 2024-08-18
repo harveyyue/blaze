@@ -25,10 +25,11 @@ import java.util.Date
 
 import org.apache.commons.io.IOUtils
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.Row
 
-object TPCDSBenchmarkRunner {
+object TPCDSBenchmarkRunner extends Logging {
   def main(args: Array[String]): Unit = {
     val dt = new SimpleDateFormat("yyyyMMddHHmm").format(new Date())
     val benchmarkArgs = new TPCDSBenchmarkArgs(args)
@@ -62,7 +63,7 @@ object TPCDSBenchmarkRunner {
 
     // create output directory
     if (Files.exists(outputDir)) {
-      System.err.println(s"output dir already existed: $outputDir, cannot continue")
+      logError(s"output dir already existed: $outputDir, cannot continue")
       System.exit(-1)
     }
     Files.createDirectories(outputDir)
@@ -78,8 +79,16 @@ object TPCDSBenchmarkRunner {
       "web_returns", "web_site", "reason", "call_center", "warehouse", "ship_mode", "income_band",
       "time_dim", "web_page")
     tables.par.foreach { tableName =>
-      spark.read.parquet(s"$dataLocation/$tableName").createOrReplaceTempView(tableName)
-      tableName -> spark.table(tableName).count()
+      val tablePath = s"$dataLocation/$tableName"
+      val ds = if (benchmarkArgs.format == "parquet") {
+        spark.read.parquet(tablePath)
+      } else if (benchmarkArgs.format == "orc") {
+        spark.read.orc(tablePath)
+      } else {
+        throw new RuntimeException(s"Not support read data format: ${benchmarkArgs.format}")
+      }
+      ds.createOrReplaceTempView(tableName)
+      // tableName -> spark.table(tableName).count()
     }
 
     // run queries
