@@ -292,7 +292,7 @@
         <shimName>spark312</shimName>
         <javaVersion>1.8</javaVersion>
         <scalaVersion>2.12</scalaVersion>
-        <scalaLongVersion>2.12.17</scalaLongVersion>
+        <scalaLongVersion>2.12.10</scalaLongVersion>
         <scalaTestVersion>3.2.9</scalaTestVersion>
         <scalafmtVersion>3.0.0</scalafmtVersion>
         <sparkVersion>3.1.2</sparkVersion>
