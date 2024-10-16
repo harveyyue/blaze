@@ -19,6 +19,7 @@
     <arrowVersion>16.0.0</arrowVersion>
     <protobufVersion>3.21.9</protobufVersion>
     <hadoopClientApiVersion>3.4.0</hadoopClientApiVersion>
+    <paimonVersion>0.9.0</paimonVersion>
   </properties>
 
   <dependencyManagement>
@@ -47,6 +48,11 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-client-api</artifactId>
         <version>${hadoopClientApiVersion}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.paimon</groupId>
+        <artifactId>paimon-core</artifactId>
+        <version>${paimonVersion}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.arrow</groupId>

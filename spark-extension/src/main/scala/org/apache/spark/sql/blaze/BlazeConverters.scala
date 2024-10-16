@@ -17,7 +17,6 @@ package org.apache.spark.sql.blaze
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-
 import org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
@@ -76,12 +75,16 @@ import org.apache.spark.sql.execution.blaze.plan.NativeOrcScanBase
 import org.apache.spark.sql.execution.blaze.plan.NativeParquetScanBase
 import org.apache.spark.sql.execution.blaze.plan.NativeSortBase
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
+import org.apache.spark.sql.hive.blaze.BlazeHiveConverters
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
+import org.apache.spark.sql.hive.execution.blaze.plan.NativeHiveTableScanBase
 import org.apache.spark.sql.types.LongType
 
 object BlazeConverters extends Logging {
   val enableScan: Boolean =
     SparkEnv.get.conf.getBoolean("spark.blaze.enable.scan", defaultValue = true)
+  val enableHiveScan: Boolean =
+    SparkEnv.get.conf.getBoolean("spark.blaze.enable.hive.scan", defaultValue = false)
   val enableProject: Boolean =
     SparkEnv.get.conf.getBoolean("spark.blaze.enable.project", defaultValue = true)
   val enableFilter: Boolean =
@@ -152,6 +155,8 @@ object BlazeConverters extends Logging {
       case e: BroadcastExchangeExec => tryConvert(e, convertBroadcastExchangeExec)
       case e: FileSourceScanExec if enableScan => // scan
         tryConvert(e, convertFileSourceScanExec)
+      case e if BlazeHiveConverters.isHiveTableScanExec(e) && enableHiveScan => // scan hive
+        tryConvert(e, BlazeHiveConverters.convertHiveTableScanExec)
       case e: ProjectExec if enableProject => // project
         tryConvert(e, convertProjectExec)
       case e: FilterExec if enableFilter => // filter
@@ -862,7 +867,9 @@ object BlazeConverters extends Logging {
       return false
     }
     plan match {
-      case _: NativeParquetScanBase | _: NativeOrcScanBase | _: NativeUnionBase => true
+      case _: NativeParquetScanBase | _: NativeOrcScanBase | _: NativeHiveTableScanBase |
+          _: NativeUnionBase =>
+        true
       case _: ConvertToNativeBase => needRenameColumns(plan.children.head)
       case exec if NativeHelper.isNative(exec) =>
         NativeHelper.getUnderlyingNativePlan(exec).output != plan.output
