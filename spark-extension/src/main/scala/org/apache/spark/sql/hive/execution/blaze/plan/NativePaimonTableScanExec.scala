@@ -50,6 +50,9 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
   private lazy val table: FileStoreTable =
     PaimonUtil.loadTable(relation.tableMeta.location.toString)
   private lazy val fileFormat = PaimonUtil.paimonFileFormat(table)
+  private lazy val dataSplits = PaimonUtil.getDataSplits(table, tableName)
+
+  // verifyPaimonCowDataSplits(dataSplits)
 
   override def doExecuteNative(): NativeRDD = {
     val nativeMetrics = MetricNode(
@@ -125,13 +128,7 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
     s"NativePaimonTableScan $tableName"
 
   override def getFilePartitions(): Array[FilePartition] = {
-    val currentTimeMillis = System.currentTimeMillis()
     val sparkSession = Shims.get.getSqlContext(basedHiveScan).sparkSession
-    // TODO: Verify paimon cow table without level0 and deleted row in DataSplit and all DataFileMetas are same level
-    val splits =
-      table.newScan().plan().splits().asScala.map(split => split.asInstanceOf[DataSplit])
-    logInfo(
-      s"Get paimon table $tableName splits elapse: ${System.currentTimeMillis() - currentTimeMillis} ms")
 
     val dataSplitPartitions = if (relation.isPartitioned) {
       val rowDataToObjectArrayConverter = new RowDataToObjectArrayConverter(
@@ -146,7 +143,7 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
           }.toMap
         val partitionKeys = table.schema().partitionKeys()
         // pruning paimon splits
-        splits
+        dataSplits
           .map { split =>
             val values = rowDataToObjectArrayConverter.convert(split.partition())
             val partitionPath = values.zipWithIndex
@@ -175,16 +172,16 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
             Cast(Literal(partValue), field.dataType, Option(timeZoneId)).eval()
           })
         }
-        splits.map { split =>
+        dataSplits.map { split =>
           val values = rowDataToObjectArrayConverter.convert(split.partition()).map(_.toString)
           (split, toRow(values, partitionSchema, sessionLocalTimeZone))
         }
       }
     } else {
-      splits.map((_, InternalRow.empty))
+      dataSplits.map((_, InternalRow.empty))
     }
     logInfo(
-      s"Table: $tableName, total splits: ${splits.length}, selected splits: ${dataSplitPartitions.length}")
+      s"Table: $tableName, total splits: ${dataSplits.length}, selected splits: ${dataSplitPartitions.length}")
 
     val isSplitable =
       fileFormat.equalsIgnoreCase(PaimonUtil.parquetFormat) || fileFormat.equalsIgnoreCase(
@@ -203,6 +200,13 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
       }
       .sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     FilePartition.getFilePartitions(sparkSession, partitionedFiles, maxSplitBytes).toArray
+  }
+
+  // Verify paimon cow table without level0 and deleted row in DataSplit and all DataFileMetas are same level
+  private def verifyPaimonCowDataSplits(dataSplits: Seq[DataSplit]): Unit = {
+    assert(
+      dataSplits.forall(split => PaimonUtil.rawConvertible(split.dataFiles().asScala)),
+      "Verify paimon data splits failed, there is a split with level0 or deleted row or multiple levels")
   }
 
   // fork {@link PartitionedFileUtil#splitFiles}

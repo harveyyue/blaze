@@ -16,12 +16,14 @@
 package org.apache.spark.sql.hive.blaze
 
 import java.util.{HashMap => JHashMap}
-
+import scala.collection.JavaConverters._
 import org.apache.paimon.CoreOptions
 import org.apache.paimon.catalog.CatalogContext
+import org.apache.paimon.io.DataFileMeta
 import org.apache.paimon.options.Options
 import org.apache.paimon.table.FileStoreTable
 import org.apache.paimon.table.FileStoreTableFactory
+import org.apache.paimon.table.source.DataSplit
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 
@@ -54,6 +56,29 @@ object PaimonUtil extends Logging {
       table.options().get(paimonFileFormatOptionKey)
     } else {
       parquetFormat
+    }
+  }
+
+  def getDataSplits(table: FileStoreTable, tableName: String): Seq[DataSplit] = {
+    val currentTimeMillis = System.currentTimeMillis()
+    val splits =
+      table.newScan().plan().splits().asScala.map(split => split.asInstanceOf[DataSplit])
+    logInfo(
+      s"Get paimon table $tableName splits elapse: ${System.currentTimeMillis() - currentTimeMillis} ms")
+    splits
+  }
+
+  def rawConvertible(files: Seq[DataFileMeta]): Boolean = {
+    val rawConvertible = files.forall(file => file.level() != 0 && withoutDeleteRow(file))
+    val oneLevel = files.map(file => file.level()).distinct.size == 1
+    rawConvertible && oneLevel
+  }
+
+  private def withoutDeleteRow(dataFileMeta: DataFileMeta): Boolean = {
+    if (dataFileMeta.deleteRowCount().isPresent) {
+      dataFileMeta.deleteRowCount().get() == 0L
+    } else {
+      true
     }
   }
 }
