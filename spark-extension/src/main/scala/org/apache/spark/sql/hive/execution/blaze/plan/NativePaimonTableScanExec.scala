@@ -36,6 +36,7 @@ import org.apache.spark.sql.catalyst.expressions.Cast
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.FilePartition
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.hive.blaze.PaimonUtil
@@ -43,8 +44,8 @@ import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.types.StructType
 import org.blaze.{protobuf => pb}
 
-case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
-    extends NativeHiveTableScanBase(basedHiveScan)
+case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec, parent: SparkPlan)
+    extends NativeHiveTableScanBase(basedHiveScan, parent)
     with Logging {
 
   private lazy val table: FileStoreTable =
@@ -64,7 +65,7 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
           inputMetric.incRecordsRead(v)
         case _ =>
       }))
-    // val nativePruningPredicateFilters = this.nativePruningPredicateFilters
+    val nativePruningPredicateFilters = this.nativePruningPredicateFilters
     val nativeFileSchema = this.nativeFileSchema
     val nativeFileGroups = this.nativeFileGroups
     val nativePartitionSchema = this.nativePartitionSchema
@@ -99,7 +100,7 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
             .newBuilder()
             .setBaseConf(nativeFileScanConf)
             .setFsResourceId(resourceId)
-            .addAllPruningPredicates(new java.util.ArrayList()) // not support this filter
+            .addAllPruningPredicates(nativePruningPredicateFilters.asJava)
 
           pb.PhysicalPlanNode
             .newBuilder()
@@ -110,7 +111,7 @@ case class NativePaimonTableScanExec(basedHiveScan: HiveTableScanExec)
             .newBuilder()
             .setBaseConf(nativeFileScanConf)
             .setFsResourceId(resourceId)
-            .addAllPruningPredicates(new java.util.ArrayList()) // not support this filter
+            .addAllPruningPredicates(nativePruningPredicateFilters.asJava)
 
           pb.PhysicalPlanNode
             .newBuilder()

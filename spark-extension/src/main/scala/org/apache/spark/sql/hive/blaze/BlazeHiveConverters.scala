@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.blaze
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.blaze.BlazeConverters.addRenameColumnsExec
 import org.apache.spark.sql.blaze.Shims
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
 import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.execution.blaze.plan.NativePaimonTableScanExec
 
@@ -34,7 +34,7 @@ object BlazeHiveConverters extends Logging {
     }
   }
 
-  def convertPaimonTableScanExec(exec: SparkPlan): SparkPlan = {
+  def convertPaimonTableScanExec(exec: SparkPlan, parent: SparkPlan): SparkPlan = {
     val hiveExec = exec.asInstanceOf[HiveTableScanExec]
     assert(
       PaimonUtil.isPaimonCowTable(
@@ -51,7 +51,11 @@ object BlazeHiveConverters extends Logging {
     logDebug(s"  output: $output")
     logDebug(s"  requestedAttributes: $requestedAttributes")
     logDebug(s"  partitionPruningPred: $partitionPruningPred")
+    val filterExecOpt = parent.find(f => f.isInstanceOf[FilterExec])
+    if (filterExecOpt.isDefined) {
+      logInfo(s" condition: ${filterExecOpt.get.asInstanceOf[FilterExec].condition}")
+    }
 
-    addRenameColumnsExec(NativePaimonTableScanExec(hiveExec))
+    addRenameColumnsExec(NativePaimonTableScanExec(hiveExec, parent))
   }
 }
