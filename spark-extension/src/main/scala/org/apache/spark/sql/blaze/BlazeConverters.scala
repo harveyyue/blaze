@@ -128,10 +128,10 @@ object BlazeConverters extends Logging {
   var _UnusedQueryPlan: QueryPlan[_] = _
   var _UnusedOptimizer: Optimizer = _
 
-  def convertSparkPlanRecursively(exec: SparkPlan): SparkPlan = {
+  def convertSparkPlanRecursively(plan: SparkPlan): SparkPlan = {
     // convert
     var danglingConverted: Seq[SparkPlan] = Nil
-    exec.foreachUp { exec =>
+    plan.foreachUp { exec =>
       val (newDanglingConverted, newChildren) =
         danglingConverted.splitAt(danglingConverted.length - exec.children.length)
 
@@ -144,14 +144,14 @@ object BlazeConverters extends Logging {
       exec.getTagValue(joinSmallerSideTag).foreach(newExec.setTagValue(joinSmallerSideTag, _))
 
       if (!isNeverConvert(newExec)) {
-        newExec = convertSparkPlan(newExec)
+        newExec = convertSparkPlan(newExec, plan)
       }
       danglingConverted = newDanglingConverted :+ newExec
     }
     danglingConverted.head
   }
 
-  def convertSparkPlan(exec: SparkPlan): SparkPlan = {
+  def convertSparkPlan(exec: SparkPlan, parent: SparkPlan): SparkPlan = {
     exec match {
       case e: ShuffleExchangeExec => tryConvert(e, convertShuffleExchangeExec)
       case e: BroadcastExchangeExec => tryConvert(e, convertBroadcastExchangeExec)
@@ -159,7 +159,7 @@ object BlazeConverters extends Logging {
         tryConvert(e, convertFileSourceScanExec)
       case e
           if enablePaimonScan && BlazeHiveConverters.isNativePaimonTableScan(e) => // scan paimon
-        tryConvert(e, BlazeHiveConverters.convertPaimonTableScanExec)
+        tryConvert(e, parent, BlazeHiveConverters.convertPaimonTableScanExec)
       case e: ProjectExec if enableProject => // project
         tryConvert(e, convertProjectExec)
       case e: FilterExec if enableFilter => // filter
@@ -252,6 +252,22 @@ object BlazeConverters extends Logging {
       exec.setTagValue(convertibleTag, true)
       convert(exec)
 
+    } catch {
+      case e @ (_: NotImplementedError | _: AssertionError | _: Exception) =>
+        logWarning(s"Falling back exec: ${exec.getClass.getSimpleName}: ${e.getMessage}")
+        exec.setTagValue(convertibleTag, false)
+        exec.setTagValue(convertStrategyTag, NeverConvert)
+        exec
+    }
+  }
+
+  private def tryConvert[T <: SparkPlan](
+      exec: T,
+      parent: T,
+      convert: (T, T) => SparkPlan): SparkPlan = {
+    try {
+      exec.setTagValue(convertibleTag, true)
+      convert(exec, parent)
     } catch {
       case e @ (_: NotImplementedError | _: AssertionError | _: Exception) =>
         logWarning(s"Falling back exec: ${exec.getClass.getSimpleName}: ${e.getMessage}")
