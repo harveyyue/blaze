@@ -56,17 +56,17 @@ object BlazeConvertStrategy extends Logging {
     "blaze.child.ordering.required")
   val joinSmallerSideTag: TreeNodeTag[BuildSide] = TreeNodeTag("blaze.join.smallerSide")
 
-  def apply(exec: SparkPlan): Unit = {
-    exec.foreach(_.setTagValue(convertibleTag, true))
-    exec.foreach(_.setTagValue(convertStrategyTag, Default))
+  def apply(plan: SparkPlan): Unit = {
+    plan.foreach(_.setTagValue(convertibleTag, true))
+    plan.foreach(_.setTagValue(convertStrategyTag, Default))
 
     // try to convert all plans and fill convertible tag back to origin exec
     var danglingChildren = Seq[SparkPlan]()
-    exec.foreachUp { exec =>
+    plan.foreachUp { exec =>
       val (newDangling, children) =
         danglingChildren.splitAt(danglingChildren.length - exec.children.length)
 
-      val converted = convertSparkPlan(exec.withNewChildren(children))
+      val converted = convertSparkPlan(exec.withNewChildren(children), plan)
       converted match {
         case e if e.getTagValue(convertToNonNativeTag).contains(true) =>
           exec.setTagValue(convertibleTag, false)
@@ -83,14 +83,14 @@ object BlazeConvertStrategy extends Logging {
     }
 
     // fill convert strategy of stage inputs
-    exec.foreachUp {
+    plan.foreachUp {
       case e if !e.isInstanceOf[NativeSupports] && NativeHelper.isNative(e) =>
         e.setTagValue(convertStrategyTag, AlwaysConvert)
       case _ =>
     }
 
     // fill childOrderingRequired tag
-    exec.foreach {
+    plan.foreach {
       case DataWritingCommandExec(cmd, child) =>
         try {
           val requiredOrdering =
@@ -108,7 +108,7 @@ object BlazeConvertStrategy extends Logging {
             }
           }
     }
-    exec.foreach {
+    plan.foreach {
       case exec: SortExec =>
         exec.setTagValue(childOrderingRequiredTag, false)
       case exec =>
@@ -120,13 +120,13 @@ object BlazeConvertStrategy extends Logging {
     }
 
     // execute some special strategies
-    removeInefficientConverts(exec)
+    removeInefficientConverts(plan)
 
     def isNative(exec: SparkPlan) = {
       isAlwaysConvert(exec) && !exec.getTagValue(convertToNonNativeTag).contains(true)
     }
 
-    exec.foreachUp {
+    plan.foreachUp {
       case exec if isNeverConvert(exec) || isAlwaysConvert(exec) =>
       // already decided, do nothing
       case e: ShuffleExchangeExec if isNative(e.child) || !isAggregate(e.child) =>

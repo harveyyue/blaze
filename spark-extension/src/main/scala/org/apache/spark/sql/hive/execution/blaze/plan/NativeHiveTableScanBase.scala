@@ -28,8 +28,7 @@ import org.apache.spark.sql.blaze.Shims
 import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.LeafExecNode
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FilterExec, LeafExecNode, SparkPlan}
 import org.apache.spark.sql.execution.datasources.FilePartition
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.metric.SQLMetric
@@ -45,7 +44,7 @@ import java.security.PrivilegedExceptionAction
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.blaze.sparkver
 
-abstract class NativeHiveTableScanBase(basedHiveScan: HiveTableScanExec)
+abstract class NativeHiveTableScanBase(basedHiveScan: HiveTableScanExec, parent: SparkPlan)
     extends LeafExecNode
     with NativeSupports {
 
@@ -107,7 +106,19 @@ abstract class NativeHiveTableScanBase(basedHiveScan: HiveTableScanExec)
       .build()
   }
 
+  protected def nativePruningPredicateFilters: Seq[pb.PhysicalExprNode] = {
+    val filterExecOpt = parent.find(f => f.isInstanceOf[FilterExec])
+    if (filterExecOpt.isDefined) {
+      Seq(
+        NativeConverters.convertScanPruningExpr(
+          filterExecOpt.get.asInstanceOf[FilterExec].condition))
+    } else {
+      Seq.empty
+    }
+  }
+
   // check whether native converting is supported
+  nativePruningPredicateFilters
   nativeFileSchema
   nativePartitionSchema
   nativeFileGroups
