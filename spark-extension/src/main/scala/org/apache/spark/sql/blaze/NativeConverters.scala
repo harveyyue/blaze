@@ -73,6 +73,8 @@ import org.blaze.protobuf.PhysicalExprNode
 object NativeConverters extends Logging {
   val udfJsonEnabled: Boolean =
     SparkEnv.get.conf.getBoolean("spark.blaze.udf.UDFJson.enabled", defaultValue = true)
+  private val decimalBinaryEnabled: Boolean =
+    SparkEnv.get.conf.getBoolean("spark.blaze.decimal.binary.enabled", defaultValue = true)
 
   def convertScalarType(dataType: DataType): pb.ScalarType = {
     val scalarTypeBuilder = dataType match {
@@ -413,6 +415,9 @@ object NativeConverters extends Logging {
     val buildBinaryExprNode = this.buildBinaryExprNode(_, _, _, isPruningExpr, fallback)
     val buildScalarFunction = this.buildScalarFunctionNode(_, _, _, isPruningExpr, fallback)
     val buildExtScalarFunction = this.buildExtScalarFunctionNode(_, _, _, isPruningExpr, fallback)
+    def enableDecimalBinaryOperator(lhs: Expression, rhs: Expression): Boolean =
+      decimalBinaryEnabled || (!decimalBinaryEnabled && !(lhs.dataType
+        .isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]))
 
     sparkExpr match {
       case e: NativeExprWrapperBase => e.wrapped
@@ -559,10 +564,9 @@ object NativeConverters extends Logging {
       case GreaterThanOrEqual(lhs, rhs) => buildBinaryExprNode(lhs, rhs, "GtEq")
       case LessThanOrEqual(lhs, rhs) => buildBinaryExprNode(lhs, rhs, "LtEq")
 
-      case e: Add =>
+      case e: Add if enableDecimalBinaryOperator(e.left, e.right) =>
         val lhs = e.left
         val rhs = e.right
-        val resultType = e.dataType
         if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
           def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
             val resultScale = max(s1, s2)
@@ -599,10 +603,9 @@ object NativeConverters extends Logging {
           buildBinaryExprNode(lhs, rhs, "Plus")
         }
 
-      case e: Subtract =>
+      case e: Subtract if enableDecimalBinaryOperator(e.left, e.right) =>
         val lhs = e.left
         val rhs = e.right
-        val resultType = e.dataType
         if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
           // copied from spark3.5
           def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
@@ -640,7 +643,7 @@ object NativeConverters extends Logging {
           buildBinaryExprNode(lhs, rhs, "Minus")
         }
 
-      case e: Multiply =>
+      case e: Multiply if enableDecimalBinaryOperator(e.left, e.right) =>
         val lhs = e.left
         val rhs = e.right
         if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
@@ -680,7 +683,7 @@ object NativeConverters extends Logging {
           buildBinaryExprNode(lhs, rhs, "Multiply")
         }
 
-      case e: Divide =>
+      case e: Divide if enableDecimalBinaryOperator(e.left, e.right) =>
         val lhs = e.left
         val rhs = e.right
         if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
